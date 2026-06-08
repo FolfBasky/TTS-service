@@ -1,11 +1,32 @@
 import re
 import docx
+from docx.oxml.ns import qn
+from lxml import etree
 
 TOPIC_RE = re.compile(r'^(\d+)\.\s*(.*)')
 
+
+def _paragraph_full_text(para):
+    """Return paragraph text including OMML equation (m:t) content.
+
+    python-docx's ``.text`` only reads ``w:t`` runs, skipping all
+    ``m:t`` elements inside equations.  This helper extracts both.
+    """
+    parts = []
+    # Iterate over all immediate children in document order, collecting
+    # text from both w:t and m:t elements.
+    for child in para._element.iter():
+        tag = child.tag
+        if tag == qn('w:t') and child.text:
+            parts.append(child.text)
+        elif tag == qn('m:t') and child.text:
+            parts.append(child.text)
+    return ''.join(parts)
+
+
 def parse_docx(path):
     doc = docx.Document(path)
-    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    paragraphs = [_paragraph_full_text(p).strip() for p in doc.paragraphs if _paragraph_full_text(p).strip()]
 
     topics = []
     current_num = None
