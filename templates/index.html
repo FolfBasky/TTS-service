@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Озвучка тем</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+  .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  p.sub { color: #666; margin-bottom: 24px; }
+
+  .upload-zone {
+    border: 2px dashed #bbb;
+    border-radius: 12px;
+    padding: 50px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    background: #fff;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: #4a6cf7;
+    background: #f0f4ff;
+  }
+  .upload-zone.has-file {
+    border-color: #4a6cf7;
+    border-style: solid;
+    background: #f0f4ff;
+  }
+  .upload-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-zone .label { font-size: 16px; color: #333; }
+  .upload-zone .hint { font-size: 13px; color: #999; margin-top: 8px; }
+  .upload-zone input[type=file] { display: none; }
+
+  .controls { margin-top: 16px; display: flex; gap: 12px; align-items: center; }
+  .controls .file-name { font-size: 14px; color: #4a6cf7; flex: 1; }
+  .btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-primary { background: #4a6cf7; color: #fff; }
+  .btn-primary:hover { background: #3b5de7; }
+  .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
+  .btn-secondary { background: #e0e0e0; color: #333; }
+  .btn-secondary:hover { background: #d0d0d0; }
+
+  #progress {
+    margin-top: 24px;
+    display: none;
+  }
+  .progress-bar {
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-bar .fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #4a6cf7, #6c63ff);
+    border-radius: 3px;
+    transition: width .3s;
+  }
+  .progress-text { font-size: 14px; color: #666; }
+
+  #results { margin-top: 24px; display: none; }
+  #results h2 { font-size: 18px; margin-bottom: 12px; }
+  .result-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: #fff;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .result-item .name {
+    font-size: 14px;
+    flex: 1;
+    word-break: break-all;
+    margin-right: 12px;
+  }
+  .result-item .size { font-size: 12px; color: #999; margin-right: 12px; white-space: nowrap; }
+  .result-item audio { height: 36px; }
+  .btn-download-all { margin-top: 12px; }
+
+  .error-msg {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #fee;
+    color: #c33;
+    border-radius: 8px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Озвучка учебных тем</h1>
+  <p class="sub">Загрузите .docx — сервис разобьёт на темы и озвучит каждую</p>
+
+  <div class="upload-zone" id="dropZone">
+    <div class="icon">📄</div>
+    <div class="label">Нажмите или перетащите .docx файл</div>
+    <div class="hint">Поддерживаются только файлы .docx</div>
+    <input type="file" id="fileInput" accept=".docx">
+  </div>
+
+  <div class="controls" id="controls" style="display:none">
+    <span class="file-name" id="fileName"></span>
+    <button class="btn btn-secondary" onclick="resetUpload()">Отмена</button>
+    <button class="btn btn-primary" id="processBtn" onclick="processFile()">Озвучить</button>
+  </div>
+
+  <div id="progress">
+    <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+    <div class="progress-text" id="progressText">Обработка...</div>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+  <div id="results">
+    <h2>Результат</h2>
+    <div id="resultsList"></div>
+    <button class="btn btn-primary btn-download-all" id="downloadAll" onclick="downloadAll()">Скачать все MP3 (ZIP)</button>
+  </div>
+</div>
+
+<script>
+let selectedFile = null;
+let taskId = null;
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const controls = document.getElementById('controls');
+const fileName = document.getElementById('fileName');
+const processBtn = document.getElementById('processBtn');
+const progress = document.getElementById('progress');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const results = document.getElementById('results');
+const resultsList = document.getElementById('resultsList');
+const errorMsg = document.getElementById('errorMsg');
+const downloadAllBtn = document.getElementById('downloadAll');
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => {
+  dropZone.classList.remove('dragover');
+});
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  if (!file.name.endsWith('.docx')) {
+    showError('Пожалуйста, выберите файл .docx');
+    return;
+  }
+  selectedFile = file;
+  fileName.textContent = file.name;
+  controls.style.display = 'flex';
+  dropZone.classList.add('has-file');
+  processBtn.disabled = false;
+  hideError();
+}
+
+function resetUpload() {
+  selectedFile = null;
+  fileInput.value = '';
+  controls.style.display = 'none';
+  dropZone.classList.remove('has-file');
+  progress.style.display = 'none';
+  results.style.display = 'none';
+  hideError();
+}
+
+async function processFile() {
+  if (!selectedFile) return;
+
+  processBtn.disabled = true;
+  progress.style.display = 'block';
+  results.style.display = 'none';
+  errorMsg.style.display = 'none';
+  progressFill.style.width = '0%';
+  progressText.textContent = 'Загрузка файла...';
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  try {
+    const resp = await fetch('/upload', { method: 'POST', body: formData });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || err.detail || 'Ошибка загрузки');
+    }
+
+    const data = await resp.json();
+    taskId = data.task_id;
+    const total = data.total;
+
+    progressFill.style.width = '20%';
+    progressText.textContent = 'Обработка и озвучивание (0/' + total + ')...';
+
+    let pollData;
+    while (true) {
+      await new Promise(r => setTimeout(r, 1000));
+      const pollResp = await fetch(`/status/${taskId}`);
+
+      if (!pollResp.ok) {
+        const err = await pollResp.json();
+        throw new Error(err.error || 'Ошибка получения статуса');
+      }
+
+      pollData = await pollResp.json();
+
+      if (pollData.error) throw new Error(pollData.error);
+
+      const pct = Math.min(90, 20 + Math.round((pollData.processed / total) * 70));
+      progressFill.style.width = pct + '%';
+      progressText.textContent = 'Обработка и озвучивание (' + pollData.processed + '/' + total + ')...';
+
+      if (pollData.done) break;
+    }
+
+    progressFill.style.width = '100%';
+    progressText.textContent = 'Готово!';
+
+    showResults(pollData.files);
+
+  } catch (err) {
+    showError(err.message);
+    progress.style.display = 'none';
+    processBtn.disabled = false;
+  }
+}
+
+function showResults(files) {
+  results.style.display = 'block';
+  resultsList.innerHTML = '';
+
+  files.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'result-item';
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = f.name;
+
+    const size = document.createElement('span');
+    size.className = 'size';
+    size.textContent = f.size;
+
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'none';
+    audio.src = `/download/${taskId}/${f.name}`;
+
+    div.appendChild(name);
+    div.appendChild(size);
+    div.appendChild(audio);
+    resultsList.appendChild(div);
+  });
+
+  downloadAllBtn.dataset.task = taskId;
+}
+
+async function downloadAll() {
+  const task = downloadAllBtn.dataset.task;
+  if (!task) return;
+  window.location.href = `/download/${task}/zip`;
+}
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+}
+
+function hideError() {
+  errorMsg.style.display = 'none';
+}
+</script>
+</body>
+</html>
